@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <title>Hydroponic System</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid black;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            text-align: left;
+            width: 12.5%;
+            /* Lebar kolom setiap elemen adalah 12.5% dari lebar total */
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Hydroponic System</h1>
+
+    <form action="/set_target" method="post">
+        <label for="target_ppm">Target PPM:</label>
+        <input type="number" id="target_ppm" name="target_ppm" value="{{ target_ppm }}" required>
+
+        <label for="target_ph">Target pH:</label>
+        <input type="number" step="any" id="target_ph" name="target_ph" value="{{ target_ph }}" required>
+
+        <button type="submit">Set Targets</button>
+    </form>
+
+    <table>
+        <tr>
+            <td>
+                <p id="real_ppm">Real PPM: </p>
+            </td>
+            <td>
+                <p id="real_ph">Real pH: </p>
+            </td>
+            <td>
+                <p id="control_ppm">Control PPM: </p>
+            </td>
+            <td>
+                <p id="control_ph">Control pH: </p>
+            </td>
+            <td>
+                <p id="motor_air">Motor Air: </p>
+            </td>
+            <td>
+                <p id="motor_nutrisi">Motor Nutrisi: </p>
+            </td>
+            <td>
+                <p id="motor_phup">Motor pH Up: </p>
+            </td>
+            <td>
+                <p id="motor_phdown">Motor pH Down: </p>
+            </td>
+        </tr>
+    </table>
+
+    <hr>
+    <h3>PPM</h3>
+    <div id="ppm-graph"></div>
+
+    <h3>pH</h3>
+    <div id="ph-graph"></div>
+
+    <script>
+        // Use AJAX to update values without reloading the page
+        function updateValues() {
+            fetch('/update_values')
+                .then(response => response.json())
+                .then(data => {
+                    // Update values on the page
+                    document.getElementById('real_ppm').innerText = `Real PPM: ${data.real_ppm}`;
+                    document.getElementById('real_ph').innerText = `Real pH: ${data.real_ph}`;
+                    document.getElementById('control_ppm').innerText = `Control PPM: ${data.control_ppm}`;
+                    document.getElementById('control_ph').innerText = `Control pH: ${data.control_ph}`;
+
+                    document.getElementById('motor_air').innerText = `Motor Air: ${data.motor_air}`;
+                    document.getElementById('motor_nutrisi').innerText = `Motor Nutrisi: ${data.motor_nutrisi}`;
+                    document.getElementById('motor_phup').innerText = `Motor pH Up: ${data.motor_phup}`;
+                    document.getElementById('motor_phdown').innerText = `Motor pH Down: ${data.motor_phdown}`;
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Update values every 5 seconds
+        setInterval(updateValues, 500);
+    </script>
+
+    <script>
+        // Use AJAX to get graph data without reloading the page
+        function updateGraph() {
+            fetch('/update_graph')
+                .then(response => response.json())
+                .then(data => {
+                    // Plotly graph for PPM
+                    const ppmPlotData = [{
+                        y: data.ppm_values,
+                        type: 'line',
+                        name: 'PPM'
+                    }, {
+                        y: Array(data.ppm_values.length).fill(data.target_ppm), // Setpoint data
+                        type: 'line',
+                        name: 'Setpoint PPM',
+                        line: {
+                            dash: 'dash',
+                            width: 2
+                        }
+                    }];
+
+                    Plotly.newPlot('ppm-graph', ppmPlotData);
+
+                    // Plotly graph for pH
+                    const phPlotData = [{
+                        y: data.ph_values,
+                        type: 'line',
+                        name: 'pH'
+                    }, {
+                        y: Array(data.ph_values.length).fill(data.target_ph), // Setpoint data
+                        type: 'line',
+                        name: 'Setpoint pH',
+                        line: {
+                            dash: 'dash',
+                            width: 2
+                        }
+                    }];
+
+                    Plotly.newPlot('ph-graph', phPlotData);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Update graph every 5 seconds
+        setInterval(updateGraph, 2000);
+    </script>
+
+
+</body>
+
+</html>

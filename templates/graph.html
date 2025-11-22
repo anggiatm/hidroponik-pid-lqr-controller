@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Garden Controller - Graph</title>
+    <!-- Plotly CDN -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Smart Garden Controller - Real-time Graph</h1>
+
+    <!-- Graph container -->
+    <div id="graph"></div>
+
+    <script>
+        // Plotly graph initialization
+        var ppmTrace = {
+            x: [],
+            y: [],
+            mode: 'lines',
+            name: 'PPM'
+        };
+
+        var phTrace = {
+            x: [],
+            y: [],
+            mode: 'lines',
+            name: 'pH'
+        };
+
+        var layout = {
+            title: 'Real-time Monitoring',
+            xaxis: { title: 'Time' },
+            yaxis: { title: 'Value' }
+        };
+
+        Plotly.newPlot('graph', [ppmTrace, phTrace], layout);
+
+        // Connect to the server's WebSocket for real-time data updates
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        socket.on('update_values', function(data) {
+            var now = new Date();
+            var timeString = now.getHours() + ':' + now.getMinutes() + ':' + now.getSeconds();
+
+            ppmTrace.x.push(timeString);
+            ppmTrace.y.push(data.real_ppm);
+
+            phTrace.x.push(timeString);
+            phTrace.y.push(data.real_ph);
+
+            // Update the plot
+            Plotly.update('graph', [ppmTrace, phTrace], layout);
+        });
+    </script>
+</body>
+</html>

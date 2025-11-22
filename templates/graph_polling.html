@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hydroponic System - Graph</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Hydroponic System - Graph</h1>
+
+    <div id="ppm-graph"></div>
+    <div id="ph-graph"></div>
+
+    <script>
+        // Use AJAX to get graph data without reloading the page
+        function updateGraph() {
+            fetch('/update_graph')
+                .then(response => response.json())
+                .then(data => {
+                    // Plotly graph for PPM
+                    Plotly.newPlot('ppm-graph', [{
+                        y: data.ppm_values,
+                        type: 'line',
+                        name: 'PPM'
+                    }]);
+
+                    // Plotly graph for pH
+                    Plotly.newPlot('ph-graph', [{
+                        y: data.ph_values,
+                        type: 'line',
+                        name: 'pH'
+                    }]);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Update graph every 5 seconds
+        setInterval(updateGraph, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Garden Controller</title>
+</head>
+
+<body>
+    <h1>Smart Garden Controller</h1>
+
+    <form action="/set_target" method="post">
+        <label for="target_ppm">Target PPM:</label>
+        <input type="text" name="target_ppm" value="{{ target_ppm }}" required>
+
+        <label for="target_ph">Target pH:</label>
+        <input type="text" name="target_ph" value="{{ target_ph }}" required>
+
+        <button type="submit">Set Targets</button>
+    </form>
+
+    <h2>Current Targets</h2>
+    <p>Target PPM: {{ target_ppm }}</p>
+    <p>Target pH: {{ target_ph }}</p>
+
+    <!-- Add your real-time data display here -->
+    <div id="realTimeData">
+        <!-- Real-time data will be displayed here -->
+    </div>
+
+    <!-- Graph container -->
+    <div id="graph"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.3/socket.io.js"></script>
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        // Update real-time data on the web interface
+        socket.on('update_values', function (data) {
+            document.getElementById('realTimeData').innerHTML = `
+                <h2>Real-time Data</h2>
+                <p>Real PPM: ${data.real_ppm}</p>
+                <p>Real pH: ${data.real_ph}</p>
+                <p>Target PPM: ${data.target_ppm}</p>
+                <p>Target pH: ${data.target_ph}</p>
+                <p>Control PPM: ${data.control_ppm}</p>
+                <p>Control pH: ${data.control_ph}</p>
+            `;
+        });
+    </script>
+
+
+
+    <script>
+        // Plotly graph initialization
+        var ppmTrace = {
+            x: [],
+            y: [],
+            mode: 'lines',
+            name: 'PPM'
+        };
+
+        var phTrace = {
+            x: [],
+            y: [],
+            mode: 'lines',
+            name: 'pH'
+        };
+
+        var layout = {
+            title: 'Real-time Monitoring',
+            xaxis: { title: 'Time' },
+            yaxis: { title: 'Value' }
+        };
+
+        Plotly.newPlot('graph', [ppmTrace, phTrace], layout);
+
+        // Connect to the server's WebSocket for real-time data updates
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        socket.on('update_values', function (data) {
+            var now = new Date();
+            var timeString = now.getHours() + ':' + now.getMinutes() + ':' + now.getSeconds();
+
+            ppmTrace.x.push(timeString);
+            ppmTrace.y.push(data.real_ppm);
+
+            phTrace.x.push(timeString);
+            phTrace.y.push(data.real_ph);
+
+            // Update the plot
+            Plotly.update('graph', [ppmTrace, phTrace], layout);
+        });
+    </script>
+</body>
+
+</html>
