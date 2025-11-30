@@ -160,8 +160,8 @@ class ControlThread(threading.Thread):
         self.loop_interval = loop_interval
         
         # Nilai awal untuk simulasi (akan ditimpa oleh sensor jika aktif)
-        self.ppm_value = 1165
-        self.ph_value = 5.8
+        self.ppm_value = 726
+        self.ph_value = 5.5
 
         # --- LOGIKA SIMULASI ---
         # Berdasarkan kode LQR Anda, motor yang menyala selama T detik
@@ -225,21 +225,26 @@ class ControlThread(threading.Thread):
             
             if control_ppm is not None:
                 duration = abs(control_ppm) # Ambil nilai positif untuk time.sleep
-                
-                # Cek tanda positif/negatif dari HASIL PID, bukan cuma error
-                if control_ppm > 0: 
-                    # PID Positif = Butuh NAIKKAN PPM (Motor 2)
-                    self.motor2.value = 0 # ON
-                    time.sleep(duration)
-                    self.motor2.value = 1 # OFF
-                    self.ppm_value += duration * self.ppm_sim_rate # Simulasi naik
-                    
-                elif control_ppm < 0: 
-                    # PID Negatif = Butuh TURUNKAN PPM (Motor 1)
-                    self.motor1.value = 0 # ON
-                    time.sleep(duration)
-                    self.motor1.value = 1 # OFF
-                    self.ppm_value -= duration * self.ppm_sim_rate # Simulasi turun
+
+                if duration > 0.3:
+                    # Cek tanda positif/negatif dari HASIL PID, bukan cuma error
+                    if control_ppm > 0: 
+                        # PID Positif = Butuh NAIKKAN PPM (Motor 2)
+                        self.motor2.value = 0 # ON
+                        time.sleep(duration)
+                        self.motor2.value = 1 # OFF
+                        self.ppm_value += duration * self.ppm_sim_rate # Simulasi naik
+
+                    elif control_ppm < 0: 
+                        # PID Negatif = Butuh TURUNKAN PPM (Motor 1)
+                        self.motor1.value = 0 # ON
+                        time.sleep(duration)
+                        self.motor1.value = 1 # OFF
+                        self.ppm_value -= duration * self.ppm_sim_rate # Simulasi turun
+                else:
+                    # Pastikan motor mati total jika dalam deadband / durasi 0
+                    self.motor1.value = 1
+                    self.motor2.value = 1
 
             # --- LOGIKA KONTROL pH ---
             if abs(ph_error) <= self.ph_deadband:
@@ -249,20 +254,24 @@ class ControlThread(threading.Thread):
                 
             if control_ph is not None:
                 duration = abs(control_ph) # Ambil nilai positif
+                if duration > 0.3:
+                    if control_ph > 0: 
+                        # PID Positif = Butuh NAIKKAN pH (Motor 3)
+                        self.motor3.value = 0 # ON
+                        time.sleep(duration)
+                        self.motor3.value = 1 # OFF
+                        self.ph_value += duration * self.ph_sim_rate
 
-                if control_ph > 0: 
-                    # PID Positif = Butuh NAIKKAN pH (Motor 3)
-                    self.motor3.value = 0 # ON
-                    time.sleep(duration)
-                    self.motor3.value = 1 # OFF
-                    self.ph_value += duration * self.ph_sim_rate
-                    
-                elif control_ph < 0: 
-                    # PID Negatif = Butuh TURUNKAN pH (Motor 4)
-                    self.motor4.value = 0 # ON
-                    time.sleep(duration)
-                    self.motor4.value = 1 # OFF
-                    self.ph_value -= duration * self.ph_sim_rate
+                    elif control_ph < 0: 
+                        # PID Negatif = Butuh TURUNKAN pH (Motor 4)
+                        self.motor4.value = 0 # ON
+                        time.sleep(duration)
+                        self.motor4.value = 1 # OFF
+                        self.ph_value -= duration * self.ph_sim_rate
+                else:
+                    # Pastikan motor mati total jika dalam deadband / durasi 0
+                    self.motor3.value = 1
+                    self.motor4.value = 1
 
 
             # --- BAGIAN SIMULASI (Noise Acak) ---
@@ -303,8 +312,8 @@ def update_values():
         'real_ph': round(control_thread.ph_value, 2), # Ganti delay_thread -> control_thread
         'target_ppm': target_ppm,
         'target_ph': target_ph,
-        'control_ppm': round(control_ppm, 2), # Kirim nilai kontrol (durasi)
-        'control_ph': round(control_ph, 2), # Kirim nilai kontrol (durasi)
+        'control_ppm': round(control_ppm, 2) if control_ppm is not None else 0,
+        'control_ph': round(control_ph, 2) if control_ph is not None else 0,
         'motor_air': 0 if (control_thread.motor1.value == 1) else 1,
         'motor_nutrisi': 0 if (control_thread.motor2.value == 1) else 1,
         'motor_phup': 0 if (control_thread.motor3.value == 1) else 1,
@@ -421,8 +430,8 @@ if __name__ == '__main__':
 
     target_ppm = 1500
     target_ph = 6.5
-    ppm_deadband = 100
-    ph_deadband = 0.3
+    ppm_deadband = 30
+    ph_deadband = 0.1
 
     # Buat thread
     control_thread = ControlThread(motor1, motor2, motor3, motor4, target_ppm, target_ph, ppm_deadband, ph_deadband, loop_interval=2)
