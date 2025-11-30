@@ -31,6 +31,11 @@ class PID:
         self.output_min, self.output_max = output_limits
         self.sample_time = sample_time # Waktu minimum antar komputasi
 
+        # --- TAMBAHAN BARU (Inisialisasi variabel monitoring) ---
+        self.last_p = 0
+        self.last_i = 0
+        self.last_d = 0
+
         self.integral_sum = 0
         self.last_error = 0
         self.last_time = time.time()
@@ -61,6 +66,11 @@ class PID:
         # (error - self.last_error) / dt
         derivative = (error - self.last_error) / dt
         D_term = self.Kd * derivative
+
+        # --- TAMBAHAN BARU (Simpan nilai komponen ke self) ---
+        self.last_p = P_term
+        self.last_i = I_term
+        self.last_d = D_term
 
         # Update state untuk iterasi berikutnya
         self.last_error = error
@@ -165,19 +175,18 @@ class ControlThread(threading.Thread):
         self.ph_sim_rate = 0.1 # 0.1 pH per detik motor menyala
         
         # --- INISIALISASI PID ---
-        # Nilai Kp, Ki, Kd ini HANYA TEBAKAN. 
-        # Anda HARUS MENYESUAIKANNYA (Tuning) agar sistem stabil!
-        
+        # Nilai Kp, Ki, Kd
+        #         
         # Output PID akan menjadi DURASI motor menyala (dalam detik)
         # Kita batasi maks 2 detik per siklus
-        self.ppm_pid = PID(Kp=1, Ki=0.01, Kd=0.001, 
+        # Izinkan output negatif agar PID bisa merespon saat kelebihan nilai
+        self.ppm_pid = PID(Kp=0.9, Ki=0.009, Kd=0.001, 
                            setpoint=target_ppm, 
-                           output_limits=(0, 2)) # Output 0-2 detik
+                           output_limits=(-2, 2)) # Min -2, Max 2
 
-        # Kita batasi maks 1.5 detik per siklus
-        self.ph_pid = PID(Kp=1.3, Ki=0.3, Kd=0.05, 
+        self.ph_pid = PID(Kp=1.5, Ki=0.3, Kd=0.05, 
                           setpoint=target_ph, 
-                          output_limits=(0, 1.5)) # Output 0-1.5 detik
+                          output_limits=(-1.5, 1.5)) # Min -1.5, Max 1.5
 
 
     def ppm_callback(self, ppm):
@@ -208,58 +217,52 @@ class ControlThread(threading.Thread):
             
             # --- LOGIKA KONTROL PID ---
             
-            # 1. Kontrol PPM
+            # --- LOGIKA KONTROL PPM ---
             if abs(ppm_error) <= self.ppm_deadband:
-                control_ppm = 0 # Tidak ada aksi
+                control_ppm = 0
             else:
-                # Hitung durasi motor menyala
                 control_ppm = self.ppm_pid.compute(self.ppm_value)
             
-            if control_ppm is not None: # compute() mengembalikan None jika sample_time belum berlalu
-                if ppm_error > 0: # Target > Real, perlu NAIKKAN PPM (Motor 2)
+            if control_ppm is not None:
+                duration = abs(control_ppm) # Ambil nilai positif untuk time.sleep
+                
+                # Cek tanda positif/negatif dari HASIL PID, bukan cuma error
+                if control_ppm > 0: 
+                    # PID Positif = Butuh NAIKKAN PPM (Motor 2)
                     self.motor2.value = 0 # ON
-                    # print(f"Motor 2 (Nutrisi) ON selama {control_ppm:.2f} detik")
-                    time.sleep(control_ppm)
+                    time.sleep(duration)
                     self.motor2.value = 1 # OFF
+                    self.ppm_value += duration * self.ppm_sim_rate # Simulasi naik
                     
-                    # --- SIMULASI --- (Comment baris ini jika pakai sensor nyata)
-                    self.ppm_value += control_ppm * self.ppm_sim_rate 
-                    
-                elif ppm_error < 0: # Target < Real, perlu TURUNKAN PPM (Motor 1)
+                elif control_ppm < 0: 
+                    # PID Negatif = Butuh TURUNKAN PPM (Motor 1)
                     self.motor1.value = 0 # ON
-                    # print(f"Motor 1 (Air) ON selama {control_ppm:.2f} detik")
-                    time.sleep(control_ppm)
+                    time.sleep(duration)
                     self.motor1.value = 1 # OFF
-                    
-                    # --- SIMULASI --- (Comment baris ini jika pakai sensor nyata)
-                    self.ppm_value -= control_ppm * self.ppm_sim_rate
-            
-            
-            # 2. Kontrol pH
+                    self.ppm_value -= duration * self.ppm_sim_rate # Simulasi turun
+
+            # --- LOGIKA KONTROL pH ---
             if abs(ph_error) <= self.ph_deadband:
-                control_ph = 0 # Tidak ada aksi
+                control_ph = 0
             else:
-                # Hitung durasi motor menyala
                 control_ph = self.ph_pid.compute(self.ph_value)
                 
             if control_ph is not None:
-                if ph_error > 0: # Target > Real, perlu NAIKKAN pH (Motor 3 / pH Up)
+                duration = abs(control_ph) # Ambil nilai positif
+
+                if control_ph > 0: 
+                    # PID Positif = Butuh NAIKKAN pH (Motor 3)
                     self.motor3.value = 0 # ON
-                    # print(f"Motor 3 (pH Up) ON selama {control_ph:.2f} detik")
-                    time.sleep(control_ph)
+                    time.sleep(duration)
                     self.motor3.value = 1 # OFF
+                    self.ph_value += duration * self.ph_sim_rate
                     
-                    # --- SIMULASI --- (Comment baris ini jika pakai sensor nyata)
-                    self.ph_value += control_ph * self.ph_sim_rate
-                    
-                elif ph_error < 0: # Target < Real, perlu TURUNKAN pH (Motor 4 / pH Down)
+                elif control_ph < 0: 
+                    # PID Negatif = Butuh TURUNKAN pH (Motor 4)
                     self.motor4.value = 0 # ON
-                    # print(f"Motor 4 (pH Down) ON selama {control_ph:.2f} detik")
-                    time.sleep(control_ph)
+                    time.sleep(duration)
                     self.motor4.value = 1 # OFF
-                    
-                    # --- SIMULASI --- (Comment baris ini jika pakai sensor nyata)
-                    self.ph_value -= control_ph * self.ph_sim_rate
+                    self.ph_value -= duration * self.ph_sim_rate
 
 
             # --- BAGIAN SIMULASI (Noise Acak) ---
@@ -272,6 +275,7 @@ class ControlThread(threading.Thread):
             ph_values.append(round(self.ph_value, 2))
             
             print(f"PPM: {self.ppm_value:.2f} (Target: {current_target_ppm}) | pH: {self.ph_value:.2f} (Target: {current_target_ph})")
+            print(self.motor1.value, self.motor2.value, self.motor3.value, self.motor4.value)
             
             time.sleep(self.loop_interval)
 
@@ -305,7 +309,54 @@ def update_values():
         'motor_nutrisi': 0 if (control_thread.motor2.value == 1) else 1,
         'motor_phup': 0 if (control_thread.motor3.value == 1) else 1,
         'motor_phdown': 0 if (control_thread.motor4.value == 1) else 1,
+        # Mengambil nilai komponen PID yang disimpan tadi
+        'tds_P': round(control_thread.ppm_pid.Kp, 5),
+        'tds_I': round(control_thread.ppm_pid.Ki, 5),
+        'tds_D': round(control_thread.ppm_pid.Kd, 5),
+        'ph_P': round(control_thread.ph_pid.Kp, 5),
+        'ph_I': round(control_thread.ph_pid.Ki, 5),
+        'ph_D': round(control_thread.ph_pid.Kd, 5),
     })
+
+@app.route('/set_pid', methods=['POST'])
+def set_pid():
+    # Ambil data dari JSON request atau Form data
+    # Harapan format data: { 'tds_kp': 1.0, 'tds_ki': 0.1, ... }
+    data = request.json or request.form
+
+    try:
+        # Update PID TDS (PPM)
+        if 'tds_kp' in data: control_thread.ppm_pid.Kp = float(data['tds_kp'])
+        if 'tds_ki' in data: control_thread.ppm_pid.Ki = float(data['tds_ki'])
+        if 'tds_kd' in data: control_thread.ppm_pid.Kd = float(data['tds_kd'])
+
+        # Update PID pH
+        if 'ph_kp' in data: control_thread.ph_pid.Kp = float(data['ph_kp'])
+        if 'ph_ki' in data: control_thread.ph_pid.Ki = float(data['ph_ki'])
+        if 'ph_kd' in data: control_thread.ph_pid.Kd = float(data['ph_kd'])
+        
+        # Opsional: Reset integral sum agar perubahan Ki tidak membuat lonjakan tiba-tiba
+        if 'reset_integral' in data and data['reset_integral'] == 'true':
+            control_thread.ppm_pid.integral_sum = 0
+            control_thread.ph_pid.integral_sum = 0
+
+        return jsonify({
+            "status": "success", 
+            "message": "PID values updated",
+            "current_tds": {
+                "Kp": control_thread.ppm_pid.Kp,
+                "Ki": control_thread.ppm_pid.Ki,
+                "Kd": control_thread.ppm_pid.Kd
+            },
+            "current_ph": {
+                "Kp": control_thread.ph_pid.Kp,
+                "Ki": control_thread.ph_pid.Ki,
+                "Kd": control_thread.ph_pid.Kd
+            }
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route('/update_graph', methods=['GET'])
 def update_graph():
@@ -318,44 +369,86 @@ def update_graph():
     })
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
+#     serial_port = '/dev/serial0'
+#     # ser = serial.Serial(serial_port, 9600)
+
+#     motor1 = PWMLED(23)
+#     motor2 = PWMLED(24)
+#     motor3 = PWMLED(25)
+#     motor4 = PWMLED(26)
+
+#     motor1.value = True
+#     motor2.value = True
+#     motor3.value = True
+#     motor4.value = True
+
+#     # --- LQR DIHAPUS ---
+#     # A = np.array([[1, 0], [0, 1]])
+#     # B = np.array([[15, -0.01], [0.3, 0.5]])
+#     # Q = np.array([[5000, 0], [0, 15000]])
+#     # R = np.array([[0.03, 0], [0, 0.0005]])
+#     # P = solve_continuous_are(A, B, Q, R)
+#     # K = np.linalg.inv(R) @ B.T @ P
+    
+#     target_ppm = 1500
+#     target_ph = 6.5
+#     ppm_deadband = 20
+#     ph_deadband = 0.1
+
+#     # Buat thread kontrol
+#     control_thread = ControlThread(motor1, motor2, motor3, motor4, target_ppm, target_ph, ppm_deadband, ph_deadband, loop_interval=2)
+#     # Buat thread sensor, hubungkan callback-nya ke control_thread
+#     # sensor_thread = SensorThread(ser, ppm_callback=control_thread.ppm_callback, ph_callback=control_thread.ph_callback, loop_interval=0.2)
+#     web_thread = threading.Thread(target=web, args=(10,))
+
+#     control_thread.start()
+#     # sensor_thread.start()
+#     web_thread.start()
+
+#     control_thread.join()
+#     # sensor_thread.join()
+#     web_thread.join()
+
+if __name__ == '__main__':
     serial_port = '/dev/serial0'
-    # ser = serial.Serial(serial_port, 9600)
 
     motor1 = PWMLED(23)
     motor2 = PWMLED(24)
     motor3 = PWMLED(25)
     motor4 = PWMLED(26)
 
-    motor1.value = True
-    motor2.value = True
-    motor3.value = True
-    motor4.value = True
-
-    # --- LQR DIHAPUS ---
-    # A = np.array([[1, 0], [0, 1]])
-    # B = np.array([[15, -0.01], [0.3, 0.5]])
-    # Q = np.array([[5000, 0], [0, 15000]])
-    # R = np.array([[0.03, 0], [0, 0.0005]])
-    # P = solve_continuous_are(A, B, Q, R)
-    # K = np.linalg.inv(R) @ B.T @ P
-    
     target_ppm = 1500
     target_ph = 6.5
-    ppm_deadband = 20
-    ph_deadband = 0.1
+    ppm_deadband = 100
+    ph_deadband = 0.3
 
-    # Buat thread kontrol
+    # Buat thread
     control_thread = ControlThread(motor1, motor2, motor3, motor4, target_ppm, target_ph, ppm_deadband, ph_deadband, loop_interval=2)
-    # Buat thread sensor, hubungkan callback-nya ke control_thread
-    # sensor_thread = SensorThread(ser, ppm_callback=control_thread.ppm_callback, ph_callback=control_thread.ph_callback, loop_interval=0.2)
     web_thread = threading.Thread(target=web, args=(10,))
 
+    # --- PERUBAHAN DISINI ---
+    # Set daemon menjadi True SEBELUM start
+    control_thread.daemon = True 
+    web_thread.daemon = True
+    
     control_thread.start()
-    # sensor_thread.start()
     web_thread.start()
 
-    control_thread.join()
-    # sensor_thread.join()
-    web_thread.join()
+    # HAPUS atau COMMENT baris .join()
+    # control_thread.join() 
+    # web_thread.join()
+
+    # Ganti dengan loop kosong agar program utama tetap hidup
+    # sampai kita tekan Ctrl+C
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Program berhenti...")
+        # Disini Anda bisa tambahkan kode untuk mematikan motor (cleanup)
+        motor1.close()
+        motor2.close()
+        motor3.close()
+        motor4.close()
